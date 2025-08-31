@@ -1,188 +1,323 @@
 #include <iostream>
-#include <fstream>
 #include <vector>
 #include <string>
-#include <algorithm>
+#include <fstream>
+#include <sstream>
+
 using namespace std;
 
 class Book {
 private:
-    string title, author, isbn;
+    string title;
+    string author;
+    string isbn;
     bool isAvailable;
 
 public:
-    Book(string t = "", string a = "", string i = "", bool av = true)
-        : title(t), author(a), isbn(i), isAvailable(av) {}
+    Book() {}
 
-    string getTitle() const { return title; }
-    string getAuthor() const { return author; }
-    string getISBN() const { return isbn; }
-    bool available() const { return isAvailable; }
+    Book(string t, string a, string i, bool available = true)
+        : title(t), author(a), isbn(i), isAvailable(available) {}
 
-    void setAvailability(bool av) { isAvailable = av; }
+    string getTitle() { return title; }
+    string getAuthor() { return author; }
+    string getISBN() { return isbn; }
+    bool available() { return isAvailable; }
 
-    void showBook() const {
-        cout << "Title: " << title
-             << " | Author: " << author
-             << " | ISBN: " << isbn
-             << " | " << (isAvailable ? "Available" : "Borrowed") << endl;
+    void setAvailability(bool status) { isAvailable = status; }
+
+    string serialize() {
+        return title + "," + author + "," + isbn + "," + (isAvailable ? "1" : "0");
     }
 
-    // Save to string (for file)
-    string toString() const {
-        return title + ";" + author + ";" + isbn + ";" + (isAvailable ? "1" : "0");
-    }
-
-    void fromString(string data) {
-        size_t p1 = data.find(';');
-        size_t p2 = data.find(';', p1 + 1);
-        size_t p3 = data.find(';', p2 + 1);
-
-        title = data.substr(0, p1);
-        author = data.substr(p1 + 1, p2 - p1 - 1);
-        isbn = data.substr(p2 + 1, p3 - p2 - 1);
-        isAvailable = (data.substr(p3 + 1) == "1");
+    static Book parse(string line) {
+        stringstream ss(line);
+        string t, a, i, av;
+        getline(ss, t, ',');
+        getline(ss, a, ',');
+        getline(ss, i, ',');
+        getline(ss, av);
+        return Book(t, a, i, av == "1");
     }
 };
 
-class User {
+class LibraryUser {
 private:
-    string id, name;
-    vector<string> borrowed;
+    string userID;
+    string name;
+    vector<string> borrowedBooks;
 
 public:
-    User(string uid = "", string uname = "") : id(uid), name(uname) {}
+    LibraryUser() {}
 
-    string getID() const { return id; }
-    string getName() const { return name; }
+    LibraryUser(string id, string n) : userID(id), name(n) {}
 
-    void borrowBook(string isbn) { borrowed.push_back(isbn); }
-    void returnBook(string isbn) {
-        auto it = find(borrowed.begin(), borrowed.end(), isbn);
-        if (it != borrowed.end()) borrowed.erase(it);
+    string getID() { return userID; }
+    string getName() { return name; }
+
+    void borrow(string isbn) {
+        borrowedBooks.push_back(isbn);
     }
 
-    void showUser() const {
-        cout << "ID: " << id << " | Name: " << name << "\n   Borrowed: ";
-        if (borrowed.empty()) cout << "None";
-        else for (auto &b : borrowed) cout << b << " ";
+    void returnBook(string isbn) {
+        for (int i = 0; i < borrowedBooks.size(); i++) {
+            if (borrowedBooks[i] == isbn) {
+                borrowedBooks.erase(borrowedBooks.begin() + i);
+                break;
+            }
+        }
+    }
+
+    bool hasBorrowed(string isbn) {
+        for (string b : borrowedBooks) {
+            if (b == isbn) return true;
+        }
+        return false;
+    }
+
+    void showBorrowedBooks() {
+        if (borrowedBooks.empty()) {
+            cout << "No books borrowed.\n";
+            return;
+        }
+
+        cout << "Borrowed books: ";
+        for (string b : borrowedBooks) {
+            cout << b << " ";
+        }
         cout << endl;
     }
 
-    string toString() const {
-        string data = id + ";" + name + ";";
-        for (size_t i = 0; i < borrowed.size(); i++) {
-            data += borrowed[i];
-            if (i != borrowed.size() - 1) data += ",";
+    string serialize() {
+        string data = userID + "," + name;
+        for (string b : borrowedBooks) {
+            data += "," + b;
         }
         return data;
     }
 
-    void fromString(string data) {
-        size_t p1 = data.find(';');
-        size_t p2 = data.find(';', p1 + 1);
+    static LibraryUser parse(string line) {
+        stringstream ss(line);
+        string id, name, isbn;
+        getline(ss, id, ',');
+        getline(ss, name, ',');
 
-        id = data.substr(0, p1);
-        name = data.substr(p1 + 1, p2 - p1 - 1);
-
-        borrowed.clear();
-        string books = data.substr(p2 + 1);
-        size_t start = 0, end;
-        while ((end = books.find(',', start)) != string::npos) {
-            borrowed.push_back(books.substr(start, end - start));
-            start = end + 1;
+        LibraryUser user(id, name);
+        while (getline(ss, isbn, ',')) {
+            user.borrow(isbn);
         }
-        if (!books.empty()) borrowed.push_back(books.substr(start));
+        return user;
     }
 };
 
 class Library {
 private:
     vector<Book> books;
-    vector<User> users;
+    vector<LibraryUser> users;
+
+    void loadBooks() {
+        ifstream file("books.txt");
+        if (!file.is_open()) {
+            ofstream create("books.txt"); 
+            create.close();
+            return;
+        }
+
+        string line;
+        while (getline(file, line)) {
+            if (!line.empty()) {
+                books.push_back(Book::parse(line));
+            }
+        }
+        file.close();
+    }
+
+    void loadUsers() {
+        ifstream file("users.txt");
+        if (!file.is_open()) {
+            ofstream create("users.txt"); 
+            create.close();
+            return;
+        }
+
+        string line;
+        while (getline(file, line)) {
+            if (!line.empty()) {
+                users.push_back(LibraryUser::parse(line));
+            }
+        }
+        file.close();
+    }
+
+    void saveBooks() {
+        ofstream file("books.txt");
+        for (Book b : books) {
+            file << b.serialize() << endl;
+        }
+        file.close();
+    }
+
+    void saveUsers() {
+        ofstream file("users.txt");
+        for (LibraryUser u : users) {
+            file << u.serialize() << endl;
+        }
+        file.close();
+    }
 
 public:
-    string bookFile = "books.txt";
-    string userFile = "users.txt";
+    Library() {
+        loadBooks();
+        loadUsers();
+    }
 
-    Library() { load(); }
-    ~Library() { save(); }
+    ~Library() {
+        saveBooks();
+        saveUsers();
+    }
 
     void addBook() {
-        string t, a, i;
-        cout << "Enter Title: "; getline(cin, t);
-        cout << "Enter Author: "; getline(cin, a);
-        cout << "Enter ISBN: "; getline(cin, i);
-        books.push_back(Book(t, a, i));
-        cout << "Book added!\n";
+        string title, author, isbn;
+        cin.ignore();
+        cout << "Enter title: ";
+        getline(cin, title);
+        cout << "Enter author: ";
+        getline(cin, author);
+        cout << "Enter ISBN: ";
+        getline(cin, isbn);
+
+        books.push_back(Book(title, author, isbn));
+        cout << "Book added.\n";
     }
 
-    void showBooks() {
-        cout << "\n--- Books ---\n";
-        for (auto &b : books) b.showBook();
+    void removeBook() {
+        string isbn;
+        cout << "Enter ISBN to remove: ";
+        cin >> isbn;
+
+        for (int i = 0; i < books.size(); i++) {
+            if (books[i].getISBN() == isbn) {
+                books.erase(books.begin() + i);
+                cout << "? Book removed.\n";
+                return;
+            }
+        }
+        cout << "Book not found.\n";
     }
 
-    void addUser() {
-        string id, n;
-        cout << "Enter ID: "; getline(cin, id);
-        cout << "Enter Name: "; getline(cin, n);
-        users.push_back(User(id, n));
-        cout << "User added!\n";
+    void registerUser() {
+        string id, name;
+        cout << "Enter User ID: ";
+        cin >> id;
+        cin.ignore();
+        cout << "Enter Name: ";
+        getline(cin, name);
+
+        users.push_back(LibraryUser(id, name));
+        cout << "User registered.\n";
     }
 
-    void showUsers() {
-        cout << "\n--- Users ---\n";
-        for (auto &u : users) u.showUser();
+    void removeUser() {
+        string id;
+        cout << "Enter User ID to remove: ";
+        cin >> id;
+
+        for (int i = 0; i < users.size(); i++) {
+            if (users[i].getID() == id) {
+                users.erase(users.begin() + i);
+                cout << "User removed.\n";
+                return;
+            }
+        }
+        cout << "User not found.\n";
     }
 
     void borrowBook() {
         string id, isbn;
-        cout << "User ID: "; getline(cin, id);
-        cout << "Book ISBN: "; getline(cin, isbn);
+        cout << "Enter User ID: ";
+        cin >> id;
+        cout << "Enter ISBN to borrow: ";
+        cin >> isbn;
 
-        auto u = find_if(users.begin(), users.end(), [&](User &usr) { return usr.getID() == id; });
-        auto b = find_if(books.begin(), books.end(), [&](Book &bk) { return bk.getISBN() == isbn; });
+        int userIndex = -1, bookIndex = -1;
+        for (int i = 0; i < users.size(); i++) {
+            if (users[i].getID() == id) {
+                userIndex = i;
+                break;
+            }
+        }
 
-        if (u != users.end() && b != books.end() && b->available()) {
-            u->borrowBook(isbn);
-            b->setAvailability(false);
-            cout << "Borrowed successfully!\n";
-        } else cout << "Borrow failed!\n";
+        for (int i = 0; i < books.size(); i++) {
+            if (books[i].getISBN() == isbn) {
+                bookIndex = i;
+                break;
+            }
+        }
+
+        if (userIndex != -1 && bookIndex != -1) {
+            if (books[bookIndex].available()) {
+                books[bookIndex].setAvailability(false);
+                users[userIndex].borrow(isbn);
+                cout << "Book borrowed.\n";
+            } else {
+                cout << "Book is already borrowed.\n";
+            }
+        } else {
+            cout << "Invalid User ID or ISBN.\n";
+        }
     }
 
     void returnBook() {
         string id, isbn;
-        cout << "User ID: "; getline(cin, id);
-        cout << "Book ISBN: "; getline(cin, isbn);
+        cout << "Enter User ID: ";
+        cin >> id;
+        cout << "Enter ISBN to return: ";
+        cin >> isbn;
 
-        auto u = find_if(users.begin(), users.end(), [&](User &usr) { return usr.getID() == id; });
-        auto b = find_if(books.begin(), books.end(), [&](Book &bk) { return bk.getISBN() == isbn; });
+        int userIndex = -1, bookIndex = -1;
+        for (int i = 0; i < users.size(); i++) {
+            if (users[i].getID() == id) {
+                userIndex = i;
+                break;
+            }
+        }
 
-        if (u != users.end() && b != books.end() && !b->available()) {
-            u->returnBook(isbn);
-            b->setAvailability(true);
-            cout << "Returned successfully!\n";
-        } else cout << "Return failed!\n";
+        for (int i = 0; i < books.size(); i++) {
+            if (books[i].getISBN() == isbn) {
+                bookIndex = i;
+                break;
+            }
+        }
+
+        if (userIndex != -1 && bookIndex != -1) {
+            if (users[userIndex].hasBorrowed(isbn)) {
+                books[bookIndex].setAvailability(true);
+                users[userIndex].returnBook(isbn);
+                cout << "Book returned.\n";
+            } else {
+                cout << "User didn't borrow this book.\n";
+            }
+        } else {
+            cout << "Invalid User ID or ISBN.\n";
+        }
     }
 
-    void load() {
-        ifstream bf(bookFile), uf(userFile);
-        string line;
-
-        while (getline(bf, line)) {
-            Book b; b.fromString(line);
-            books.push_back(b);
-        }
-        while (getline(uf, line)) {
-            User u; u.fromString(line);
-            users.push_back(u);
+    void showAllBooks() {
+        cout << "\n All Books:\n";
+        for (Book b : books) {
+            cout << "Title: " << b.getTitle()
+                 << " | Author: " << b.getAuthor()
+                 << " | ISBN: " << b.getISBN()
+                 << " | Available: " << (b.available() ? "Yes" : "No") << endl;
         }
     }
 
-    void save() {
-        ofstream bf(bookFile), uf(userFile);
-        for (auto &b : books) bf << b.toString() << endl;
-        for (auto &u : users) uf << u.toString() << endl;
+    void showAllUsers() {
+        cout << "\n All Users:\n";
+        for (LibraryUser u : users) {
+            cout << "ID: " << u.getID() << " | Name: " << u.getName() << endl;
+            u.showBorrowedBooks();
+        }
     }
 };
 
@@ -191,23 +326,32 @@ int main() {
     int choice;
 
     do {
-        cout << "\n===== Library Menu =====\n";
-        cout << "1. Add Book\n2. Show Books\n3. Add User\n4. Show Users\n5. Borrow Book\n6. Return Book\n0. Exit\n";
-        cout << "Choice: ";
+        cout << "\n====== LIBRARY MENU ======\n";
+        cout << "1. Add Book\n";
+        cout << "2. Remove Book\n";
+        cout << "3. Register User\n";
+        cout << "4. Remove User\n";
+        cout << "5. Borrow Book\n";
+        cout << "6. Return Book\n";
+        cout << "7. Show All Books\n";
+        cout << "8. Show All Users\n";
+        cout << "9. Exit\n";
+        cout << "Enter your choice: ";
         cin >> choice;
-        cin.ignore();
 
         switch (choice) {
             case 1: lib.addBook(); break;
-            case 2: lib.showBooks(); break;
-            case 3: lib.addUser(); break;
-            case 4: lib.showUsers(); break;
+            case 2: lib.removeBook(); break;
+            case 3: lib.registerUser(); break;
+            case 4: lib.removeUser(); break;
             case 5: lib.borrowBook(); break;
             case 6: lib.returnBook(); break;
-            case 0: cout << "Exiting...\n"; break;
-            default: cout << "Invalid choice!\n";
+            case 7: lib.showAllBooks(); break;
+            case 8: lib.showAllUsers(); break;
+            case 9: cout << "Goodbye!\n"; break;
+            default: cout << "Invalid choice.\n";
         }
-    } while (choice != 0);
+    } while (choice != 9);
 
     return 0;
 }
